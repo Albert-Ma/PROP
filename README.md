@@ -82,7 +82,7 @@ python run_pretraining.py \
 Download pre-trained [PROP](https://drive.google.com/drive/folders/1-fiIqLBlSwoeYkIOR6bl1o3spjJ-ARe7?usp=sharing) from Google drive and extract it.
 
 ## Fine-tuning
-PROP have the same architecture with [`BERT-Base`](https://github.com/google-research/bert), and thus you can fine-tune PROP like BERT on any downstream ad-hoc retrieval tasks, e.g. replace BERT checkpoints with PROP's.
+PROP have the same architecture with [`BERT-Base`](https://github.com/google-research/bert), and thus you can fine-tune PROP like BERT on any downstream ad-hoc retrieval tasks by just replacing BERT checkpoints with PROP's. Our clean version of fine-tuning code will be available available soon since it contains many irrelevant/WIP code from my main private repository and it needs time to clean up code and re-validate.
 
 ## Citation
 If you find our work useful, please consider citing our paper:

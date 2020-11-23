@@ -11,12 +11,12 @@ For **MS MARCO**, download corpus from the official TREC [website](https://msmar
 
 ### Pre-process data
 Compute and store the statistics about `tf, df, average_word_num et.al` on the whole corpus into `Json` file.
-* `corpus_df_file.json`: {word: word document count}
-* `doc_tf_file.json`: {doc_id, doc_tf, doc_word_num}, one document per line
-* `corpus_tf_file.json`: {word: word count in the whole corpus}
-* `info_file.json`: {total_doc_num, total_word_num, average_doc_word_num}
-* `stem2pos_file.json`: {stem: {word: count}}
-* `preprocessed_data`: {docid, bert_tokenized_doc_text}
+* `corpus_df_file.json`: `{word: word document count}`
+* `doc_tf_file.json`: `{doc_id, doc_tf, doc_word_num}`, one document per line
+* `corpus_tf_file.json`: `{word: word count in the whole corpus}`
+* `info_file.json`: `{total_doc_num, total_word_num, average_doc_word_num}`
+* `stem2pos_file.json`: `{stem: {word: count}}`
+* `preprocessed_data`: `{docid, bert_tokenized_doc_text}`
 
 ### Generate representive word sets
 
@@ -82,7 +82,7 @@ python run_pretraining.py \
 Download pre-trained [PROP](https://drive.google.com/drive/folders/1-fiIqLBlSwoeYkIOR6bl1o3spjJ-ARe7?usp=sharing) from Google drive and extract it.
 
 ## Fine-tuning
-PROP have the same architecture with [`BERT-Base`](https://github.com/google-research/bert), and thus you can fine-tune PROP like BERT on any downstream ad-hoc retrieval tasks by just replacing BERT checkpoints with PROP's. Our clean version of fine-tuning code will be available available soon since it contains many irrelevant/WIP code from my main private repository and it needs time to clean up code and re-validate.
+PROP have the same architecture with [`BERT-Base`](https://github.com/google-research/bert), and thus you can fine-tune PROP like BERT on any downstream ad-hoc retrieval tasks by just replacing BERT checkpoints with PROP's. Our clean version of fine-tuning code will be available soon since it contains many irrelevant/WIP code from my main private repository.
 
 ## Citation
 If you find our work useful, please consider citing our paper:

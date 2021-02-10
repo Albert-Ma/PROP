@@ -4,7 +4,8 @@
 **PROP**, **P**re-training with **R**epresentative w**O**rds **P**rediction, is a new pre-training method tailored for ad-hoc retrieval. PROP is inspired by the classical statistical language model for IR, specifically the query likelihood model, which assumes that the query is generated as the piece of text representative of the “ideal” document. Based on this idea, we construct the representative words prediction (ROP) task for pre-training. The full paper which describes PROP in detail can be found [here](https://arxiv.org/pdf/2010.10137.pdf).
 
 ---
-**Note that we pre-trained a different PROP model on MS MARCO document collection using more data and more steps, called [PROP_step400k base](https://drive.google.com/file/d/1aw0s1UK8PvZCI9R8hA9b7kxoN0x35kRr/view?usp=sharing), competing for top positions on the leaderboard. The pre-trained model [PROP_step400k base](https://drive.google.com/file/d/1aw0s1UK8PvZCI9R8hA9b7kxoN0x35kRr/view?usp=sharing) we used for MS MARCO Document Ranking Leaderboard is different from the model in our WSDM 2021 paper.**
+**Note that we pre-trained a different PROP model on MS MARCO document collection using more data and more steps, called [PROP_step400k base](https://drive.google.com/file/d/1aw0s1UK8PvZCI9R8hA9b7kxoN0x35kRr/view?usp=sharing), competing for top positions on the leaderboard. 
+Thus [PROP_step400k base](https://drive.google.com/file/d/1aw0s1UK8PvZCI9R8hA9b7kxoN0x35kRr/view?usp=sharing) we used for MS MARCO Document Ranking Leaderboard is different from the model used in our WSDM 2021 paper.**
 
 * 🔥**News 2021-1-7: PROP_step400k base (ensemble v0.1) got first place on [MS MARCO Document Ranking Leaderboard](https://microsoft.github.io/MSMARCO-Document-Ranking-Submissions/leaderboard/).**
 
@@ -91,7 +92,7 @@ python run_pretraining.py \
 ## Pre-trained Models
 **Download the pre-trained model [PROP_step400k base](https://drive.google.com/file/d/1aw0s1UK8PvZCI9R8hA9b7kxoN0x35kRr/view?usp=sharing) (pre-trained using more data and more steps) we used for MS MARCO Document Leaderboard.**
 
-Download the pre-trained model [PROP<sub>Wikipedia</sub>](), [PROP<sub>MSMARCO</sub>]() we used in our WSDM 2021 paper from Google drive and extract it.
+Download the pre-trained model [PROP<sub>Wikipedia</sub>](https://drive.google.com/file/d/11uj30VgEsVLj6PekP-SBvjWzlyLDP7Hf/view?usp=sharing), [PROP<sub>MSMARCO</sub>](https://drive.google.com/file/d/1aw0s1UK8PvZCI9R8hA9b7kxoN0x35kRr/view?usp=sharing) we used in our WSDM 2021 paper from Google drive and extract it.
 
 ## Fine-tuning
 PROP have the same architecture with [`BERT-Base`](https://github.com/google-research/bert), and thus you can fine-tune PROP like BERT on any downstream ad-hoc retrieval tasks by just replacing BERT checkpoints with PROP's. Our clean version of fine-tuning code will be available soon since it contains many irrelevant/WIP code from my main private repository.

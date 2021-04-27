@@ -1,5 +1,7 @@
 # PROP
 
+*Will update this repo to include ICT and B-PROP. The deadline will be July 11.*
+
 ## Introduction
 **PROP**, **P**re-training with **R**epresentative w**O**rds **P**rediction, is a new pre-training method tailored for ad-hoc retrieval. PROP is inspired by the classical statistical language model for IR, specifically the query likelihood model, which assumes that the query is generated as the piece of text representative of the “ideal” document. Based on this idea, we construct the representative words prediction (ROP) task for pre-training. The full paper which describes PROP in detail can be found [here](https://arxiv.org/pdf/2010.10137.pdf).
 

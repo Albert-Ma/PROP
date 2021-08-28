@@ -3,6 +3,7 @@
 ## Introduction
 Despite the exciting performance achieved by PROP, its effectiveness might be bounded by the classical unigram language model adopted in the ROP task construction process. To tackle this problem, we propose a bootstrapped pre-training method (namely B-PROP) based on BERT for ad-hoc retrieval. The key idea is to use the powerful contextual language model BERT to replace the classical unigram language model for the ROP task construction, and re-train BERT itself towards the tailored objective for IR. Specifically, we introduce a novel contrastive method, inspired by the divergence-from-randomness idea, to leverage BERT's self-attention mechanism to sample representative words from the document. The full paper can be found [here](https://arxiv.org/pdf/2104.09791.pdf).
 
+The term *bootstrap* here means that we sample from BERT and retrain BERT using these samples, so the *bootstrap* is used in its idiomatic sense rather than the statistical sense.
 
 ## Contrastive Sampling for ROP with BERT
 

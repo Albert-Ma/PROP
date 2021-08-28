@@ -1,6 +1,5 @@
 import os
 import json
-import torch
 import random
 import logging
 import numpy as np
@@ -10,6 +9,7 @@ from collections import namedtuple
 from argparse import ArgumentParser
 from tempfile import TemporaryDirectory
 
+import torch
 from tensorboardX import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import DataLoader, Dataset, SequentialSampler
@@ -23,19 +23,16 @@ InputFeatures = namedtuple("InputFeatures", "input_ids input_mask segment_ids la
 log_format = '%(asctime)-10s: %(message)s'
 logging.basicConfig(level=logging.INFO, format=log_format)
 
-TEMP_DIR='./'
 
-def convert_example_to_features(example, tokenizer, max_seq_length):
+def convert_example_to_features(example, max_seq_length):
     label = example["label"]
-    tokens = example["tokens"]
+    input_ids = example["input_ids"]
     segment_ids = example["segment_ids"]
-    masked_lm_labels = example["masked_lm_labels"]
+    masked_label_ids = example["masked_label_ids"]
     masked_lm_positions = example["masked_lm_positions"]
 
-    
-    assert len(tokens) == len(segment_ids) <= max_seq_length  # The preprocessed data should be already truncated
-    input_ids = tokenizer.convert_tokens_to_ids(tokens)
-    masked_label_ids = tokenizer.convert_tokens_to_ids(masked_lm_labels)
+    # The preprocessed data should be already truncated
+    assert len(input_ids) == len(segment_ids) <= max_seq_length
 
     input_array = np.zeros(max_seq_length, dtype=np.int)
     input_array[:len(input_ids)] = input_ids
@@ -59,10 +56,8 @@ def convert_example_to_features(example, tokenizer, max_seq_length):
 
 
 class PregeneratedDataset(Dataset):
-    def __init__(self, training_path, epoch, tokenizer, num_data_epochs, reduce_memory=False, mode='train'):
+    def __init__(self, training_path, epoch, num_data_epochs, temp_dir='./', mode='train'):
         self.epoch = epoch
-        self.tokenizer = tokenizer
-        self.vocab = tokenizer.vocab
         self.data_epoch = epoch % num_data_epochs
         data_file = training_path / f"epoch_{self.data_epoch}.json"
         metrics_file = training_path / f"epoch_{self.data_epoch}_metrics.json"
@@ -75,29 +70,24 @@ class PregeneratedDataset(Dataset):
                 num_samples = 26000000
         else:
             num_samples = 1000 # NOT USE
+        
         self.temp_dir = None
         self.working_dir = None
         seq_len = metrics['max_seq_len']
-        if reduce_memory:
-            self.temp_dir = TemporaryDirectory(dir=TEMP_DIR)
-            self.working_dir = Path(self.temp_dir.name)
-            input_ids = np.memmap(filename=self.working_dir/'input_ids.memmap',
-                                  mode='w+', dtype=np.int32, shape=(num_samples, seq_len))
-            input_masks = np.memmap(filename=self.working_dir/'input_masks.memmap',
+        self.temp_dir = TemporaryDirectory(dir=temp_dir)
+        self.working_dir = Path(self.temp_dir.name)
+        input_ids = np.memmap(filename=self.working_dir/'input_ids.memmap',
+                                mode='w+', dtype=np.int32, shape=(num_samples, seq_len))
+        input_masks = np.memmap(filename=self.working_dir/'input_masks.memmap',
+                                shape=(num_samples, seq_len), mode='w+', dtype=np.int32)
+        segment_ids = np.memmap(filename=self.working_dir/'segment_ids.memmap',
+                                shape=(num_samples, seq_len), mode='w+', dtype=np.int32)
+        labels = np.memmap(filename=self.working_dir/'labels.memmap',
+                                shape=(num_samples), mode='w+', dtype=np.bool)
+        lm_label_ids = np.memmap(filename=self.working_dir/'lm_label_ids.memmap',
                                     shape=(num_samples, seq_len), mode='w+', dtype=np.int32)
-            segment_ids = np.memmap(filename=self.working_dir/'segment_ids.memmap',
-                                    shape=(num_samples, seq_len), mode='w+', dtype=np.int32)
-            labels = np.memmap(filename=self.working_dir/'labels.memmap',
-                                 shape=(num_samples), mode='w+', dtype=np.bool)
-            lm_label_ids = np.memmap(filename=self.working_dir/'lm_label_ids.memmap',
-                                     shape=(num_samples, seq_len), mode='w+', dtype=np.int32)
-            lm_label_ids[:] = -1
-        else:
-            input_ids = np.zeros(shape=(num_samples, seq_len), dtype=np.int32)
-            input_masks = np.zeros(shape=(num_samples, seq_len), dtype=np.int32)
-            segment_ids = np.zeros(shape=(num_samples, seq_len), dtype=np.int32)
-            labels = np.zeros(shape=(num_samples,), dtype=np.bool)
-            lm_label_ids = np.full(shape=(num_samples, seq_len), dtype=np.int32, fill_value=-1)
+        lm_label_ids[:] = -1
+
         logging.info(f"Loading {mode} examples for epoch {epoch}")
         with data_file.open() as f:
             instance_index = 0
@@ -106,7 +96,7 @@ class PregeneratedDataset(Dataset):
                     break
                 line = line.strip()
                 example = json.loads(line)
-                features = convert_example_to_features(example, tokenizer, seq_len)
+                features = convert_example_to_features(example, seq_len)
                 input_ids[instance_index] = features.input_ids
                 segment_ids[instance_index] = features.segment_ids
                 input_masks[instance_index] = features.input_mask
@@ -161,12 +151,10 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('--pregenerated_data', type=Path, required=True)
     parser.add_argument('--output_dir', type=Path, required=True)
+    parser.add_argument("--temp_dir", type=str, default='./')
     parser.add_argument("--bert_model", type=str, required=True, help="Bert pre-trained model selected in the list: bert-base-uncased, "
                              "bert-large-uncased, bert-base-cased, bert-base-multilingual, bert-base-chinese.")
     parser.add_argument("--do_lower_case", action="store_true")
-    parser.add_argument("--reduce_memory", action="store_true",
-                        help="Store training data as on-disc memmaps to massively reduce memory usage")
-
     parser.add_argument("--epochs", type=int, default=3, help="Number of epochs to train for")
     parser.add_argument("--negtive_num",
                         type=int,
@@ -287,12 +275,19 @@ def main():
         model.half()
     model.to(device)
     if args.local_rank != -1:
-        try:
-            from apex.parallel import DistributedDataParallel as DDP
-        except ImportError:
-            raise ImportError(
-                "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
-        model = DDP(model)
+        # try:
+        #     from apex.parallel import DistributedDataParallel as DDP
+        # except ImportError:
+        #     raise ImportError(
+        #         "Please install apex from https://www.github.com/nvidia/apex to use distributed and fp16 training.")
+        # model = DDP(model)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[
+                args.local_rank],
+            output_device=args.local_rank,
+            find_unused_parameters=True,
+        )
     elif n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
@@ -331,11 +326,10 @@ def main():
     global_step = 0
     model.train()
     for epoch in range(args.epochs):
-        epoch_train_dataset = PregeneratedDataset(epoch=epoch, training_path=args.pregenerated_data, tokenizer=tokenizer,
-                                            num_data_epochs=num_data_epochs, reduce_memory=args.reduce_memory)
+        epoch_train_dataset = PregeneratedDataset(epoch=epoch, training_path=args.pregenerated_data,
+                                            num_data_epochs=num_data_epochs, temp_dir=args.temp_dir)
         epoch_eval_dataset = PregeneratedDataset(epoch=epoch, training_path=args.pregenerated_data,
-                                                 tokenizer=tokenizer, num_data_epochs=num_data_epochs,
-                                                 reduce_memory=args.reduce_memory, mode='eval')
+                                            num_data_epochs=num_data_epochs, temp_dir=args.temp_dir, mode='eval')
         if args.local_rank == -1:
             train_sampler = RandomPairSampler(epoch_train_dataset, args.negtive_num)
             eval_sampler = SequentialSampler(epoch_eval_dataset)
@@ -357,21 +351,28 @@ def main():
                 model.train()
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, label, lm_label_ids = batch
+                
                 loss = model(input_ids, segment_ids, input_mask, lm_label_ids, label)
+                
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
+                
                 if args.gradient_accumulation_steps > 1:
                     loss = loss / args.gradient_accumulation_steps
+                
                 if args.fp16:
                     optimizer.backward(loss)
                 else:
                     loss.backward()
+                
                 tr_loss += loss.item()
                 nb_tr_steps += 1
                 pbar.update(1)
+                
                 mean_loss = tr_loss * args.gradient_accumulation_steps / nb_tr_steps
                 pbar.set_postfix_str(f"Loss: {mean_loss:.5f}")
                 writer.add_scalar('train/loss', round(mean_loss,4), global_step)
+                
                 if (step + 1) % args.gradient_accumulation_steps == 0:
                     if args.fp16:
                         # modify learning rate with special warm up BERT uses
@@ -380,9 +381,11 @@ def main():
                                                                           args.warmup_proportion)
                         for param_group in optimizer.param_groups:
                             param_group['lr'] = lr_this_step
+    
                     optimizer.step()
                     optimizer.zero_grad()
                     global_step += 1
+    
                     if global_step % args.save_checkpoints_steps == 0:
                         with torch.no_grad():
                             # Save a ckpt
@@ -390,6 +393,7 @@ def main():
                             model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
                             output_model_file = args.output_dir / "pytorch_model_{}.bin".format(global_step)
                             torch.save(model_to_save.state_dict(), str(output_model_file))
+    
     # Save the last model
     logging.info("** ** * Saving model ** ** * ")
     model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self

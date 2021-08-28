@@ -300,7 +300,7 @@ class BertSelfAttention(nn.Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, attention_mask):
+    def forward(self, hidden_states, attention_mask, output_attentions=False):
         # attention_mask:  batch_size*1*1*seq_length
         mixed_query_layer = self.query(hidden_states)
         mixed_key_layer = self.key(hidden_states)
@@ -335,7 +335,9 @@ class BertSelfAttention(nn.Module):
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
-        return context_layer
+
+        outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
+        return outputs
 
 
 class BertSelfOutput(nn.Module):
@@ -358,10 +360,12 @@ class BertAttention(nn.Module):
         self.self = BertSelfAttention(config)
         self.output = BertSelfOutput(config)
 
-    def forward(self, input_tensor, attention_mask):
-        self_output = self.self(input_tensor, attention_mask)
-        attention_output = self.output(self_output, input_tensor)
-        return attention_output
+    def forward(self, input_tensor, attention_mask, output_attentions=False):
+        self_outputs = self.self(input_tensor, attention_mask, output_attentions)
+        attention_output = self_outputs[0]
+        attention_output = self.output(attention_output, input_tensor)
+        outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
+        return outputs
 
 
 class BertIntermediate(nn.Module):
@@ -400,11 +404,14 @@ class BertLayer(nn.Module):
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
 
-    def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(hidden_states, attention_mask)
+    def forward(self, hidden_states, attention_mask, output_attentions=False):
+        self_attention_outputs  = self.attention(hidden_states, attention_mask, output_attentions=output_attentions)
+        attention_output = self_attention_outputs[0]
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
+        attentions = self_attention_outputs[1:]  # add self attentions if we output attention weights
+        outputs = (layer_output,) + attentions
+        return outputs
 
 
 class BertEncoder(nn.Module):
@@ -413,15 +420,16 @@ class BertEncoder(nn.Module):
         layer = BertLayer(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True):
+    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True, output_attentions=False):
         all_encoder_layers = []
         for layer_module in self.layer:
-            hidden_states = layer_module(hidden_states, attention_mask)
+            layer_outputs = layer_module(hidden_states, attention_mask, output_attentions) # Tuple(layer output, attention)
             if output_all_encoded_layers:
-                all_encoder_layers.append(hidden_states)
+                all_encoder_layers.append(layer_outputs)
+            hidden_states = layer_outputs[0]
         if not output_all_encoded_layers:
-            all_encoder_layers.append(hidden_states)
-        return all_encoder_layers
+            all_encoder_layers.append(layer_outputs)
+        return all_encoder_layers # (layer_output,) + attentions
 
 
 class BertPooler(nn.Module):
@@ -682,6 +690,9 @@ class BertModel(BertPreTrainedModel):
             input sequence length in the current batch. It's the mask that we typically use for attention when
             a batch has varying length sentences.
         `output_all_encoded_layers`: boolean which controls the content of the `encoded_layers` output as described below. Default: `True`.
+        `output_attentions (:obj:`bool`, `optional`)`:
+            Whether or not to return the attentions tensors of all attention layers. See ``attentions`` under returned
+            tensors for more detail.
 
     Outputs: Tuple of (encoded_layers, pooled_output)
         `encoded_layers`: controled by `output_all_encoded_layers` argument:
@@ -715,7 +726,8 @@ class BertModel(BertPreTrainedModel):
         self.pooler = BertPooler(config)
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, 
+                output_all_encoded_layers=True, output_attentions=False):
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         if token_type_ids is None:
@@ -743,14 +755,21 @@ class BertModel(BertPreTrainedModel):
         extended_attention_mask = extended_attention_mask.to(dtype=next(self.parameters()).dtype) # fp16 compatibility
         extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
         embedding_output = self.embeddings(input_ids, token_type_ids)
-        encoded_layers = self.encoder(embedding_output,
+        encoder_outputs = self.encoder(embedding_output,
                                       extended_attention_mask,
-                                      output_all_encoded_layers=output_all_encoded_layers)
+                                      output_all_encoded_layers=output_all_encoded_layers,
+                                      output_attentions=output_attentions)
+        encoded_layers = tuple(layer_output[0] for layer_output in encoder_outputs)
         sequence_output = encoded_layers[-1]
         pooled_output = self.pooler(sequence_output)
         if not output_all_encoded_layers:
-            encoded_layers = encoded_layers[-1]
-        return encoded_layers, pooled_output
+            encoded_layers = encoded_layers[-1] # (sequence_hidden_states, attention_weight)
+        
+        if output_attentions:
+            attention_outputs = tuple(layer_output[1] for layer_output in encoder_outputs)
+            return encoded_layers, pooled_output, attention_outputs
+        else:
+            return encoded_layers, pooled_output
 
 
 class PROP(BertPreTrainedModel):

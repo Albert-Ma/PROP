@@ -8,54 +8,35 @@ from pathlib import Path
 from argparse import ArgumentParser
 from tempfile import TemporaryDirectory
 from multiprocessing import Pool, Value, Lock
-from random import random, shuffle, choice, sample
+from random import random, shuffle, choice, sample, randrange
 
 import numpy as np
 from tqdm import tqdm
 
 from pytorch_pretrain_bert.tokenization import BertTokenizer
 
-TEMP_DIR = './'
 lock = Lock()
 num_instances = Value('i', 0)
 
 class DocumentDatabase:
-    def __init__(self, reduce_memory=False):
-        if reduce_memory:
-            self.temp_dir = TemporaryDirectory(dir=TEMP_DIR)
-            self.working_dir = Path(self.temp_dir.name)
-            self.document_shelf_filepath = self.working_dir / 'shelf.db'
-            self.document_shelf = shelve.open(str(self.document_shelf_filepath),
-                                              flag='n', protocol=-1)
-            self.documents = None
-        else:
-            self.documents = []
-            self.document_shelf = None
-            self.document_shelf_filepath = None
-            self.temp_dir = None
-        self.doc_lengths = []
-        self.doc_cumsum = None
-        self.cumsum_max = None
-        self.reduce_memory = reduce_memory
+    def __init__(self, temp_dir='./'):
+        self.temp_dir = TemporaryDirectory(dir=temp_dir)
+        self.working_dir = Path(self.temp_dir.name)
+        self.document_shelf_filepath = self.working_dir / 'shelf.db'
+        self.document_shelf = shelve.open(str(self.document_shelf_filepath),
+                                            flag='n', protocol=-1)
+        self.indexes = []
 
     def add_document(self, document):
-        if not document:
-            return
-        if self.reduce_memory:
-            current_idx = len(self.doc_lengths)
-            self.document_shelf[str(current_idx)] = document
-        else:
-            self.documents.append(document)
-        self.doc_lengths.append(len(document))
+        current_idx = len(self.indexes)
+        self.document_shelf[str(current_idx)] = document
+        self.indexes.append(current_idx)
 
     def __len__(self):
-        return len(self.doc_lengths)
+        return len(self.indexes)
 
     def __getitem__(self, item):
-        if self.reduce_memory:
-            return self.document_shelf[str(item)]
-        else:
-            return self.documents[item]
+        return self.document_shelf[str(item)]
 
     def __contains__(self, item):
         if str(item) in self.document_shelf:
@@ -155,15 +136,15 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
     return tokens, mask_indices, masked_token_labels
 
 def construct_pairwise_examples(docs, chunk_indexs, rop_num_per_doc, max_seq_len, mlm, 
-                        bert_tokenizer, masked_lm_prob, max_predictions_per_seq,
-                        bert_vocab_list, epoch_filename):
-    for doc_idx in chunk_indexs:
-        example = docs[doc_idx]
+                                bert_tokenizer, masked_lm_prob, max_predictions_per_seq,
+                                bert_vocab_list, epoch_filename):
+    for idx in chunk_indexs:
+        example = docs[idx]
         rep_word_sets = example["rep_word_sets"]
         pos_bert_tokenized_doc = example['bert_tokenized_content']
         assert rop_num_per_doc <= len(rep_word_sets)
 
-        # Sample candiate M pair of word sets
+        # Sample $M$ pair of candiate word sets
         rep_word_sets_indexes = list(range(len(rep_word_sets)))
         cand_rep_word_sets_indexes = np.random.choice(rep_word_sets_indexes, rop_num_per_doc, replace=False)
         
@@ -184,44 +165,37 @@ def construct_pairwise_examples(docs, chunk_indexs, rop_num_per_doc, max_seq_len
                 neg_rep_word_set = rep_word_set1
 
             for j, word_sets in enumerate([pos_rep_word_set, neg_rep_word_set]):
-                tokens_a = bert_tokenizer.tokenize(word_sets)
-                assert len(tokens_a) >= 1
-                if j == 0:
-                    # more representive
-                    label = 1
-                else:
-                    # less representive
-                    label = 0
+                query_tokens = bert_tokenizer.tokenize(word_sets)
+                doc_tokens = pos_bert_tokenized_doc
+                assert len(query_tokens) >= 1 and len(doc_tokens) >= 1
 
-                tokens_b = pos_bert_tokenized_doc
-                assert len(tokens_b) >= 1
+                label = 1 if j == 0 else 0
 
-                truncate_seq_pair(tokens_a, tokens_b, max_seq_len-3)
-
-                tokens = ["[CLS]"] + tokens_a + ["[SEP]"] + tokens_b + ["[SEP]"]
+                truncate_seq_pair(query_tokens, doc_tokens, max_seq_len-3)
+                tokens = ["[CLS]"] + query_tokens + ["[SEP]"] + doc_tokens + ["[SEP]"]
                 # The segment IDs are 0 for the [CLS] token, the A tokens and the first [SEP]
                 # They are 1 for the B tokens and the final [SEP]
-                segment_ids = [0 for _ in range(len(tokens_a) + 2)] + [1 for _ in range(len(tokens_b) + 1)]
+                segment_ids = [0 for _ in range(len(query_tokens) + 2)] + [1 for _ in range(len(doc_tokens) + 1)]
 
-                if mlm:
-                    tokens, masked_lm_positions, masked_lm_labels = create_masked_lm_predictions(
-                        tokens, masked_lm_prob, max_predictions_per_seq, True, bert_vocab_list)
-                else:
-                    masked_lm_positions, masked_lm_labels = [], []
+                tokens, masked_lm_positions, masked_lm_labels = create_masked_lm_predictions(
+                    tokens, masked_lm_prob, max_predictions_per_seq, True, bert_vocab_list)
+
+                input_ids = bert_tokenizer.convert_tokens_to_ids(tokens)
+                masked_label_ids = bert_tokenizer.convert_tokens_to_ids(masked_lm_labels)
 
                 instance = {
-                    "tokens": tokens,
+                    "input_ids": input_ids,
                     "segment_ids": segment_ids,
-                    "label": label,
                     "masked_lm_positions": masked_lm_positions,
-                    "masked_lm_labels": masked_lm_labels}
+                    "masked_label_ids": masked_label_ids,
+                    "label": label,
+                    }
                 instances.append(instance)
 
-        doc_instances = [json.dumps(instance, ensure_ascii=False) for instance in instances]
         lock.acquire()
         with open(epoch_filename,'a+') as epoch_file:
-            for i, instance in enumerate(doc_instances):
-                epoch_file.write(instance + '\n')
+            for instance in instances:
+                epoch_file.write(json.dumps(instance, ensure_ascii=False) + '\n')
                 num_instances.value += 1
         lock.release()
 
@@ -235,14 +209,13 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--train_corpus', type=Path, required=True)
     parser.add_argument("--output_dir", type=Path, required=True)
+    parser.add_argument("--temp_dir", type=str, default='./')
     parser.add_argument("--bert_model", type=str, default='bert-base-uncased')
     parser.add_argument("--do_lower_case", action="store_true")
     parser.add_argument("--rop_num_per_doc", type=int, default=1,
                         help="How many samples for each document")
     parser.add_argument("--epochs_to_generate", type=int, default=1,
                         help="Number of epochs of data to pregenerate")
-    parser.add_argument("--reduce_memory", action="store_true",
-                        help="Reduce memory usage for large datasets by keeping data on disc rather than in memory")
     parser.add_argument("--mlm", action="store_true")
     parser.add_argument("--max_seq_len", type=int, default=128)
     parser.add_argument("--masked_lm_prob", type=float, default=0.15,
@@ -256,32 +229,29 @@ if __name__ == '__main__':
 
     bert_tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
     bert_vocab_list = list(bert_tokenizer.vocab.keys())
-    with DocumentDatabase(reduce_memory=args.reduce_memory) as docs:
-        with args.train_corpus.open() as f:
-            for line in tqdm(f, desc="Loading Dataset", unit=" lines"):
-                example = json.loads(line)
-                docs.add_document(example)
-            if len(docs) <= 1:
-                exit("ERROR: No document breaks were found in the input file! These are necessary to allow the script to "
-                    "ensure that random NextSentences are not sampled from the same document. Please add blank lines to "
-                    "indicate breaks between documents in your input file. If your dataset does not contain multiple "
-                    "documents, blank lines can be inserted at any natural boundary, such as the ends of chapters, "
-                    "sections or paragraphs.")
-        print('Reading file is done! Total doc num:{}'.format(len(docs)))
 
-        instances = []
-        for epoch in range(args.epochs_to_generate):
+    for epoch in range(args.epochs_to_generate):
+        epoch_data = args.train_corpus / f"instances_epoch_{epoch}.json"
+        with DocumentDatabase(temp_dir=args.temp_dir) as docs:
+            with epoch_data.open() as f:
+                for line in tqdm(f, desc="Loading Dataset", unit=" lines"):
+                    example = json.loads(line)
+                    docs.add_document(example)
+                if len(docs) <= 1:
+                    exit("ERROR: No document breaks were found in the input file!")
+            print('Reading file is done! Total doc num:{}'.format(len(docs)))
+
+            instances = []
             num_instances.value = 0
-            epoch_filename = args.output_dir / f"epoch_{epoch}.json"
-            num_processors = args.num_workers
-            processors = Pool(num_processors)
+            output_epoch_filename = args.output_dir / f"epoch_{epoch}.json"
+            processors = Pool(args.num_workers)
             cand_idxs = list(range(0, len(docs)))
             shuffle(cand_idxs)
-            for i in range(num_processors):
-                chunk_size = int(len(cand_idxs) / num_processors)
+            for i in range(args.num_workers):
+                chunk_size = int(len(cand_idxs) / args.num_workers)
                 chunk_indexs = cand_idxs[i*chunk_size:(i+1)*chunk_size]
                 r = processors.apply_async(construct_pairwise_examples, (docs, chunk_indexs, args.rop_num_per_doc, args.max_seq_len, \
-                    args.mlm, bert_tokenizer, args.masked_lm_prob, args.max_predictions_per_seq, bert_vocab_list, epoch_filename,),\
+                    args.mlm, bert_tokenizer, args.masked_lm_prob, args.max_predictions_per_seq, bert_vocab_list, output_epoch_filename,),\
                     error_callback=error_callback)
             processors.close()
             processors.join()

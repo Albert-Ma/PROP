@@ -809,9 +809,9 @@ class PROP(BertPreTrainedModel):
     def __init__(self, config):
         super(PROP, self).__init__(config)
         self.bert = BertModel(config)
+        self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.cls = nn.Linear(config.hidden_size, 1)
-        self.predictions = BertLMPredictionHead(config, self.bert.embeddings.word_embeddings.weight)
+        self.rep = nn.Linear(config.hidden_size, 1)
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, input_mask=None, masked_lm_labels=None,
@@ -820,11 +820,11 @@ class PROP(BertPreTrainedModel):
         batch_size = input_ids.size(0)
         sequence_output, pooled_output = self.bert(input_ids, token_type_ids, input_mask,
                                                    output_all_encoded_layers=False)
-        prediction_scores = self.cls(self.dropout(pooled_output))
+        prediction_scores = self.rep(self.dropout(pooled_output))
         
         if masked_lm_labels is not None and representative_word_sets_label is not None:
             # MLM loss
-            lm_prediction_scores = self.predictions(sequence_output)
+            lm_prediction_scores = self.cls(sequence_output)
             loss_fct = CrossEntropyLoss(ignore_index=-1)
             masked_lm_loss = loss_fct(lm_prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
             # ROP loss

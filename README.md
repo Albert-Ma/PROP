@@ -6,15 +6,15 @@
 
 ---
 
-* 2022-7 Update: we have uploaded the PROP model to the huggingface model cards.
-* 2021-8 Update: we add the [B-PROP](bprop/README.md) pre-training in this repo.
-* 🔥**News 2021-1-7: PROP_step400k base (ensemble v0.1) got first place on [MS MARCO Document Ranking Leaderboard](https://microsoft.github.io/MSMARCO-Document-Ranking-Submissions/leaderboard/).**
+* 🔥 2022-7 Update: we have uploaded the PROP model to the huggingface model cards 🤗.
+* 🔥 2021-8 Update: we add the [B-PROP](bprop/README.md) pre-training in this repo.
+* 🔥 **News 2021-1-7: PROP_step400k base (ensemble v0.1) got first place on [MS MARCO Document Ranking Leaderboard](https://microsoft.github.io/MSMARCO-Document-Ranking-Submissions/leaderboard/).**
 
 
 ---
 
 
-## Pre-trained models in the Huggingface
+## Pre-trained models in the Huggingface 🤗
 
 We have uploaded three PROP models to the Huggingface Hub, so you can easily use the PROP models with [Huggingface/Transformers](https://github.com/huggingface/transformers) library.
 

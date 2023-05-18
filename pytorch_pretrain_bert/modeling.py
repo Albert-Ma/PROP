@@ -811,7 +811,7 @@ class PROP(BertPreTrainedModel):
         self.bert = BertModel(config)
         self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.cls = nn.Linear(config.hidden_size, 1)
+        self.rep = nn.Linear(config.hidden_size, 1)
         self.cls.predictions = BertLMPredictionHead(config, self.bert.embeddings.word_embeddings.weight)
         self.apply(self.init_bert_weights)
 
